@@ -1,0 +1,159 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r}
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(MASS)
+library(cluster)
+library(factoextra)
+library(caret)
+library(psych)
+library(corrplot)
+library(nnet)
+library(plotly)
+```
+
+
+```{r}
+matches <- read_csv("G:\\SLTC\\ICE\\3rd Year\\6th Sem\\Aplied Statistics\\Applied Stat\\football results.csv")
+matches$date <- ymd(matches$date)
+matches$year <- year(matches$date)
+```
+
+```{r}
+str(matches)
+```
+```{r}
+summary(matches)
+```
+
+```{r}
+matches <- matches %>%
+  mutate(
+    outcome = case_when(
+      home_score > away_score ~ "Home Win",
+      home_score < away_score ~ "Away Win",
+      TRUE ~ "Draw"
+    ),
+    goal_diff = home_score - away_score,
+    abs_goal_diff = abs(goal_diff),
+    total_goals = home_score + away_score,
+    is_draw = ifelse(outcome == "Draw", 1, 0),
+    home_win = ifelse(outcome == "Home Win", 1, 0),
+    neutral = as.numeric(neutral)
+  )
+
+matches <- matches %>% filter(!is.na(tournament))
+```
+
+```{r}
+# Number of matches over the years
+
+matches %>%
+  ggplot(aes(x = year)) + 
+  geom_histogram(binwidth = 5, fill = "steelblue") +
+  labs(title = "Matches Over Time", x = "Year", y = "Match Count")
+```
+```{r}
+matches %>%
+  ggplot(aes(total_goals)) + 
+  geom_histogram(binwidth = 1, fill = "tomato") +
+  labs(title = "Distribution of Total Goals")
+```
+```{r}
+matches %>%
+  ggplot(aes(outcome, abs_goal_diff, fill = outcome)) + 
+  geom_boxplot() +
+  labs(title = "Goal Difference by Match Outcome")
+```
+```{r}
+matches %>%
+  filter(tournament %in% names(sort(table(matches$tournament), decreasing = TRUE)[1:6])) %>%
+  ggplot(aes(x = tournament, fill = outcome)) + 
+  geom_bar(position = "fill") + 
+  labs(title = "Match Outcome by Tournament") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+chisq.test(table(matches$outcome, matches$neutral))
+```
+```{r}
+# Correlation Analysis
+numeric_data <- matches %>% select(home_score, away_score, total_goals, goal_diff, neutral)
+corrplot(cor(numeric_data), method = "color")
+```
+```{r}
+# Simple
+lm1 <- lm(total_goals ~ year, data = matches)
+summary(lm1)
+```
+```{r}
+lm2 <- lm(total_goals ~ year + neutral + as.factor(tournament), data = matches)
+summary(lm2)
+```
+```{r}
+scaled_data <- matches %>% select(home_score, away_score, total_goals, goal_diff, neutral) %>% scale()
+pca <- prcomp(scaled_data)
+summary(pca)
+```
+```{r}
+screeplot(pca,type="lines", main="Screeplot of PCA")
+```
+
+```{r}
+# Prepare numeric data only
+# Remove rows with any NA and ensure numeric data
+fa_data <- matches %>% 
+  select(home_score, away_score, total_goals, goal_diff, neutral) %>%
+  drop_na() %>%
+  scale()
+
+scree(fa_data, main = "Scree Plot for Factor Analysis")
+```
+```{r}
+fa_result <- fa(fa_data, nfactors = 2, rotate = "varimax")
+fa_result
+```
+
+```{r}
+fa.diagram(fa_result, main = "Factor Analysis Diagram")
+```
+
+```{r}
+#Discriminant Analysis (LDA)
+lda_model <- lda(outcome ~ home_score + away_score + neutral, data = matches)
+lda_pred <- predict(lda_model)
+table(matches$outcome, lda_pred$class)
+```
+```{r}
+plot(lda_model)
+```
+
+
+
+```{r}
+## 12. Cluster Analysis
+
+# Prepare scaled data
+k_data <- scale(matches %>% select(home_score, away_score, total_goals, goal_diff))
+
+# K-Means Clustering (as before)
+kmodel <- kmeans(k_data, centers = 3)
+fviz_cluster(kmodel, data = k_data, geom = "point", ellipse.type = "norm")
+```
+
+```{r}
+# Hierarchical Clustering
+dist_matrix <- dist(k_data)
+hc <- hclust(dist_matrix, method = "ward.D2")
+
+# Dendrogram Plot
+plot(hc, labels = FALSE, hang = -1, main = "Dendrogram of Match Clusters")
+rect.hclust(hc, k = 3, border = "red")  # Optional: cut tree into 3 clusters
+
+```
+
